@@ -35,6 +35,16 @@ class ParseMakefileTest(unittest.TestCase):
             self.assertTrue(kernel.KernelVersion(*series, 0).uses_qcom_repo(), series)
 
 
+class LtsSeriesTest(unittest.TestCase):
+    def test_known_lts_series(self):
+        for series in kernel.LTS_SERIES:
+            self.assertTrue(kernel.KernelVersion(*series, 0).is_lts(), series)
+
+    def test_series_outside_the_lts_set(self):
+        for series in ((4, 20), (5, 19), (6, 0), (6, 5)):
+            self.assertFalse(kernel.KernelVersion(*series, 0).is_lts(), series)
+
+
 class DetectTest(unittest.TestCase):
     def test_detects_from_directory(self):
         with tempfile.TemporaryDirectory() as tmp:

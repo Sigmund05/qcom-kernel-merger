@@ -153,6 +153,13 @@ def run(args: argparse.Namespace) -> int:
 
     kernel_version = kernel.detect(source)
     log.info("kernel version: %s", kernel_version.release)
+    if not kernel_version.is_lts():
+        log.warning(
+            "%s is not a known long-term support series; Android device "
+            "kernels track an LTS release, so check that the source is the "
+            "kernel you expect",
+            kernel_version.series,
+        )
 
     repo_name = args.repo or clo.repo_name(kernel_version)
     url = "{base}/{name}.git".format(base=args.clo_base.rstrip("/"), name=repo_name)

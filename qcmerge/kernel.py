@@ -23,6 +23,24 @@ _REQUIRED = ("VERSION", "PATCHLEVEL")
 #: release sits between 5.15 and 6.1.
 LAST_MSM_SERIES = (5, 15)
 
+#: Kernel series released as long-term support. Android device kernels only
+#: ever track one of these, so a series outside this set points at a misread
+#: source far more often than at a real device kernel.
+LTS_SERIES = (
+    (3, 18),
+    (4, 4),
+    (4, 9),
+    (4, 14),
+    (4, 19),
+    (5, 4),
+    (5, 10),
+    (5, 15),
+    (6, 1),
+    (6, 6),
+    (6, 12),
+    (6, 18),
+)
+
 
 @dataclass(frozen=True)
 class KernelVersion:
@@ -45,6 +63,10 @@ class KernelVersion:
     @property
     def key(self) -> tuple:
         return (self.version, self.patchlevel, self.sublevel)
+
+    def is_lts(self) -> bool:
+        """Whether this series is a known long-term support release."""
+        return (self.version, self.patchlevel) in LTS_SERIES
 
     def uses_qcom_repo(self) -> bool:
         """Whether this version lives in CLO's merged ``qcom`` repository."""

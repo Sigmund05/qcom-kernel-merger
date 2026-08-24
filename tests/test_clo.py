@@ -2,7 +2,7 @@
 
 import unittest
 
-from qcmerge import clo
+from qcmerge import clo, kernel
 from qcmerge.kernel import KernelVersion
 
 
@@ -18,6 +18,11 @@ class RepoNameTest(unittest.TestCase):
         self.assertEqual(clo.repo_name(KernelVersion(6, 1, 57)), "qcom")
         self.assertEqual(clo.repo_name(KernelVersion(6, 12, 3)), "qcom")
         self.assertEqual(clo.repo_name(KernelVersion(6, 18, 1)), "qcom")
+
+    def test_every_lts_series_maps_to_a_repository(self):
+        for series in kernel.LTS_SERIES:
+            expected = "qcom" if series > (5, 15) else "msm-%d.%d" % series
+            self.assertEqual(clo.repo_name(KernelVersion(*series, 0)), expected, series)
 
     def test_url(self):
         self.assertEqual(

@@ -31,9 +31,11 @@ changes.
 
 1. **Detect the kernel version** — read `VERSION`, `PATCHLEVEL` and `SUBLEVEL`
    from the OEM source's top-level `Makefile`.
-2. **Pick the CLO repository** — below 6.1, the per-series repositories
-   (`msm-3.18`, `msm-4.9`, `msm-5.4` and so on); from 6.1 up, the merged
-   `qcom` repository.
+2. **Pick the CLO repository** — up to and including 5.15, the per-series
+   repositories (`msm-3.18`, `msm-4.9`, `msm-5.4` and so on); past it, the
+   merged `qcom` repository. Long-term support goes straight from 5.15 to
+   6.1, and an Android device kernel only ever tracks an LTS release, so a
+   series outside that set is flagged as suspicious.
 3. **Find the closest tag**
    - List the tags with `git ls-remote --tags`.
    - Fetch **commits and trees only** with a
