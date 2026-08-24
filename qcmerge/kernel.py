@@ -11,7 +11,7 @@ from .errors import QcMergeError
 
 #: Matches the ``VERSION = 5`` style assignments at the top of the Makefile.
 _ASSIGN_RE = re.compile(
-    r"^\s*(VERSION|PATCHLEVEL|SUBLEVEL|NAME)\s*[:?]?=\s*(.*?)\s*$"
+    r"^\s*(VERSION|PATCHLEVEL|SUBLEVEL)\s*[:?]?=\s*(.*?)\s*$"
 )
 
 #: Fields that must be present for the file to count as a kernel Makefile.
@@ -64,10 +64,7 @@ def parse_makefile(text: str) -> Optional[KernelVersion]:
         match = _ASSIGN_RE.match(line)
         if not match:
             continue
-        key, value = match.group(1), match.group(2)
-        if key == "NAME":
-            continue
-        found.setdefault(key, value)
+        found.setdefault(match.group(1), match.group(2))
 
     if any(key not in found for key in _REQUIRED):
         return None
