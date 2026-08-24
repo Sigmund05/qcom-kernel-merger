@@ -19,12 +19,6 @@ class ParseMakefileTest(unittest.TestCase):
         self.assertEqual(version.series, "5.4")
         self.assertEqual(version.release, "5.4.210")
 
-    def test_keeps_extraversion(self):
-        version = kernel.parse_makefile(
-            "VERSION = 6\nPATCHLEVEL = 1\nSUBLEVEL = 57\nEXTRAVERSION = -rc2\n"
-        )
-        self.assertEqual(version.full, "6.1.57-rc2")
-
     def test_ignores_later_assignments(self):
         text = "VERSION = 4\nPATCHLEVEL = 19\nSUBLEVEL = 157\n" + "VERSION = 9\n" * 5
         self.assertEqual(kernel.parse_makefile(text).version, 4)

@@ -152,7 +152,7 @@ def run(args: argparse.Namespace) -> int:
     source = os.path.abspath(args.source)
 
     kernel_version = kernel.detect(source)
-    log.info("kernel version: %s", kernel_version.full)
+    log.info("kernel version: %s", kernel_version.release)
 
     repo_name = args.repo or clo.repo_name(kernel_version)
     url = "{base}/{name}.git".format(base=args.clo_base.rstrip("/"), name=repo_name)

@@ -103,7 +103,7 @@ def build_commit_message(
         "Similarity: {score:.4f} ({matched} identical of {union} paths)\n"
         "Changes vs base: {modified} modified, {added} added, {removed} removed\n".format(
             name=name,
-            version=kernel_version.full,
+            version=kernel_version.release,
             repo=repo_url_value,
             tag=score.tag,
             source=os.path.abspath(source_dir),

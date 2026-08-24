@@ -43,7 +43,6 @@ def kernel_makefile(version: int, patchlevel: int, sublevel: int) -> str:
         "VERSION = {0}\n"
         "PATCHLEVEL = {1}\n"
         "SUBLEVEL = {2}\n"
-        "EXTRAVERSION =\n"
         "NAME = Test Kernel\n"
     ).format(version, patchlevel, sublevel)
 

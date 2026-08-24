@@ -11,7 +11,7 @@ from .errors import QcMergeError
 
 #: Matches the ``VERSION = 5`` style assignments at the top of the Makefile.
 _ASSIGN_RE = re.compile(
-    r"^\s*(VERSION|PATCHLEVEL|SUBLEVEL|EXTRAVERSION|NAME)\s*[:?]?=\s*(.*?)\s*$"
+    r"^\s*(VERSION|PATCHLEVEL|SUBLEVEL|NAME)\s*[:?]?=\s*(.*?)\s*$"
 )
 
 #: Fields that must be present for the file to count as a kernel Makefile.
@@ -29,7 +29,6 @@ class KernelVersion:
     version: int
     patchlevel: int
     sublevel: int = 0
-    extraversion: str = ""
 
     @property
     def series(self) -> str:
@@ -38,13 +37,8 @@ class KernelVersion:
 
     @property
     def release(self) -> str:
-        """The full version without EXTRAVERSION, such as ``5.4.210``."""
+        """The full version, such as ``5.4.210``."""
         return "{0}.{1}.{2}".format(self.version, self.patchlevel, self.sublevel)
-
-    @property
-    def full(self) -> str:
-        """The release with EXTRAVERSION appended."""
-        return self.release + self.extraversion
 
     @property
     def key(self) -> tuple:
@@ -55,7 +49,7 @@ class KernelVersion:
         return (self.version, self.patchlevel) >= QCOM_REPO_MIN
 
     def __str__(self) -> str:  # pragma: no cover - display only
-        return self.full
+        return self.release
 
 
 def parse_makefile(text: str) -> Optional[KernelVersion]:
@@ -93,7 +87,6 @@ def parse_makefile(text: str) -> Optional[KernelVersion]:
         version=version,
         patchlevel=patchlevel,
         sublevel=as_int("SUBLEVEL") or 0,
-        extraversion=found.get("EXTRAVERSION", ""),
     )
 
 
