@@ -1,4 +1,4 @@
-"""CodeLinaro(CLO) 커널 저장소 주소 계산과 태그 목록 조회."""
+"""CodeLinaro (CLO) repository addressing and tag listing."""
 
 from __future__ import annotations
 
@@ -12,15 +12,16 @@ from .kernel import KernelVersion
 
 log = logging.getLogger(__name__)
 
-#: CLO 커널 저장소들이 모여 있는 그룹 주소.
+#: Group that holds CLO's kernel repositories.
 DEFAULT_CLO_BASE = "https://git.codelinaro.org/clo/la/kernel"
 
 
 def repo_name(kernel_version: KernelVersion) -> str:
-    """커널 버전에 맞는 CLO 저장소 이름.
+    """Name of the CLO repository holding this kernel version.
 
-    * 6.1 미만: ``msm-3.18``, ``msm-4.9``, ``msm-5.4`` 처럼 계열별 저장소
-    * 6.1 이상: 계열이 통합된 ``qcom`` 저장소
+    * below 6.1: one repository per series, ``msm-3.18``, ``msm-4.9``,
+      ``msm-5.4`` and so on
+    * 6.1 and up: the merged ``qcom`` repository
     """
     if kernel_version.uses_qcom_repo():
         return "qcom"
@@ -28,15 +29,15 @@ def repo_name(kernel_version: KernelVersion) -> str:
 
 
 def repo_url(kernel_version: KernelVersion, base: str = DEFAULT_CLO_BASE) -> str:
-    """커널 버전에 맞는 CLO 저장소 URL."""
+    """URL of the CLO repository holding this kernel version."""
     return "{base}/{name}.git".format(base=base.rstrip("/"), name=repo_name(kernel_version))
 
 
 def parse_ls_remote(output: str) -> list[str]:
-    """``git ls-remote --tags`` 출력에서 태그 이름 목록을 뽑는다.
+    """Pull tag names out of ``git ls-remote --tags`` output.
 
-    annotated 태그는 ``refs/tags/<name>`` 과 역참조된 ``refs/tags/<name>^{}`` 가
-    같이 나오므로 중복을 제거한다.
+    An annotated tag appears twice, as ``refs/tags/<name>`` and as the peeled
+    ``refs/tags/<name>^{}``, so duplicates are dropped.
     """
     names: list[str] = []
     seen: set = set()
@@ -56,26 +57,26 @@ def parse_ls_remote(output: str) -> list[str]:
 
 
 def list_remote_tags(url: str, timeout: Optional[float] = None) -> list[str]:
-    """원격 저장소의 태그 이름을 전부 가져온다."""
+    """Fetch every tag name from the remote repository."""
     git = Git()
-    log.info("CLO 태그 목록 조회: %s", url)
+    log.info("listing CLO tags: %s", url)
     proc = git.run_bytes("ls-remote", "--tags", url, check=False, timeout=timeout)
     if proc.returncode != 0:
         raise QcMergeError(
-            "CLO 저장소의 태그 목록을 가져오지 못했습니다: {url}\n{err}".format(
+            "could not list tags of the CLO repository: {url}\n{err}".format(
                 url=url, err=proc.stderr.decode("utf-8", "replace").strip()
             )
         )
     tags = parse_ls_remote(proc.stdout.decode("utf-8", "surrogateescape"))
-    log.info("태그 %d 개 확인", len(tags))
+    log.info("found %d tags", len(tags))
     return tags
 
 
 def filter_tags(tags: Sequence[str], patterns: Optional[Iterable[str]] = None) -> list[str]:
-    """glob 패턴으로 태그 후보를 좁힌다. 패턴이 없으면 그대로 돌려준다."""
+    """Narrow the candidate tags with glob patterns, or keep them all."""
     patterns = [p for p in (patterns or []) if p]
     if not patterns:
         return list(tags)
     selected = [tag for tag in tags if any(fnmatch.fnmatch(tag, p) for p in patterns)]
-    log.info("패턴 %s 적용: 태그 %d -> %d 개", patterns, len(tags), len(selected))
+    log.info("patterns %s applied: %d -> %d tags", patterns, len(tags), len(selected))
     return selected
