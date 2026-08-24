@@ -1,4 +1,4 @@
-"""``python -m qcmerge`` 진입점."""
+"""Entry point for ``python -m qcmerge``."""
 
 import sys
 

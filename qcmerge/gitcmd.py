@@ -1,8 +1,9 @@
-"""git 명령을 감싸는 얇은 래퍼.
+"""A thin wrapper around the git command line.
 
-외부 의존성 없이 subprocess 로 git 을 직접 호출한다. 커널 트리를 다루므로
-출력이 수 MB 단위로 커질 수 있어서, 텍스트 디코딩이 필요 없는 경우에는
-bytes 를 그대로 돌려주는 :meth:`Git.run_bytes` 를 쓴다.
+git is called through subprocess so the tool needs no third-party
+dependencies. Kernel trees are large enough that a single command can print
+megabytes, so :meth:`Git.run_bytes` hands back raw bytes wherever the output
+does not need to be decoded.
 """
 
 from __future__ import annotations
@@ -16,7 +17,8 @@ from .errors import QcMergeError
 
 log = logging.getLogger(__name__)
 
-#: 사용자 git 설정(예: core.autocrlf, gc 설정)의 영향을 받지 않도록 항상 붙이는 옵션.
+#: Settings pinned on every call so the user's git configuration (core.autocrlf,
+#: gc behaviour and the like) cannot change what we read back.
 COMMON_CONFIG: tuple[str, ...] = (
     "-c", "core.autocrlf=false",
     "-c", "core.safecrlf=false",
@@ -26,33 +28,34 @@ COMMON_CONFIG: tuple[str, ...] = (
 
 
 class GitError(QcMergeError):
-    """git 명령이 0 이 아닌 종료 코드를 돌려준 경우."""
+    """Raised when a git command exits with a non-zero status."""
 
     def __init__(self, argv: Sequence[str], returncode: int, stderr: str) -> None:
         self.argv = list(argv)
         self.returncode = returncode
         self.stderr = stderr.strip()
         super().__init__(
-            "git 명령 실패 (exit {code}): {cmd}\n{err}".format(
+            "git command failed (exit {code}): {cmd}\n{err}".format(
                 code=returncode,
                 cmd=" ".join(self.argv),
-                err=self.stderr or "(stderr 없음)",
+                err=self.stderr or "(no stderr)",
             )
         )
 
 
 class Git:
-    """특정 저장소를 대상으로 git 을 실행하는 헬퍼.
+    """Runs git against one repository.
 
     Parameters
     ----------
     git_dir:
-        ``--git-dir`` 로 넘길 경로. ``None`` 이면 ``cwd`` 기준으로 git 이 알아서 찾는다.
+        Path passed as ``--git-dir``. When ``None``, git discovers the
+        repository from ``cwd``.
     work_tree:
-        ``--work-tree`` 로 넘길 경로. 제조사 소스 디렉터리를 건드리지 않고
-        인덱스만 만들 때 사용한다.
+        Path passed as ``--work-tree``. Used to build an index from the OEM
+        source directory without writing anything into it.
     cwd:
-        git 을 실행할 디렉터리.
+        Directory to run git in.
     """
 
     def __init__(
@@ -65,7 +68,7 @@ class Git:
         self.work_tree = os.path.abspath(work_tree) if work_tree else None
         self.cwd = os.path.abspath(cwd) if cwd else (self.work_tree or self.git_dir)
 
-    # ------------------------------------------------------------------ 내부
+    # -------------------------------------------------------------- internal
     def _argv(self, args: Sequence[str]) -> list[str]:
         argv = ["git"]
         if self.git_dir:
@@ -78,14 +81,14 @@ class Git:
 
     def _env(self, extra: Optional[Mapping[str, str]]) -> dict:
         env = dict(os.environ)
-        # 대화형 인증 프롬프트로 멈추지 않도록 한다.
+        # Never block on an interactive credential prompt.
         env.setdefault("GIT_TERMINAL_PROMPT", "0")
         env.setdefault("GIT_ASKPASS", "echo")
         if extra:
             env.update(extra)
         return env
 
-    # ------------------------------------------------------------------ 실행
+    # --------------------------------------------------------------- running
     def run_bytes(
         self,
         *args: str,
@@ -94,9 +97,9 @@ class Git:
         env: Optional[Mapping[str, str]] = None,
         timeout: Optional[float] = None,
     ) -> subprocess.CompletedProcess:
-        """git 을 실행하고 :class:`subprocess.CompletedProcess` 를 돌려준다."""
+        """Run git and return the :class:`subprocess.CompletedProcess`."""
         argv = self._argv(args)
-        log.debug("git 실행: %s (cwd=%s)", " ".join(argv), self.cwd)
+        log.debug("running git: %s (cwd=%s)", " ".join(argv), self.cwd)
         proc = subprocess.run(
             argv,
             cwd=self.cwd,
@@ -111,21 +114,21 @@ class Git:
         return proc
 
     def run(self, *args: str, **kwargs) -> str:
-        """git 을 실행하고 stdout 을 문자열로 돌려준다(끝의 개행 제거)."""
+        """Run git and return stdout as text, without the trailing newline."""
         proc = self.run_bytes(*args, **kwargs)
         return proc.stdout.decode("utf-8", "surrogateescape").rstrip("\n")
 
     def lines(self, *args: str, **kwargs) -> list[str]:
-        """git 출력을 줄 단위 리스트로 돌려준다(빈 줄 제거)."""
+        """Run git and return stdout split into non-empty lines."""
         out = self.run(*args, **kwargs)
         return [line for line in out.split("\n") if line]
 
     def ok(self, *args: str, **kwargs) -> bool:
-        """git 명령이 성공했는지만 확인한다."""
+        """Return whether the git command succeeded."""
         kwargs["check"] = False
         return self.run_bytes(*args, **kwargs).returncode == 0
 
-    # ------------------------------------------------------------- 편의 함수
+    # ------------------------------------------------------------ convenience
     def config_set(self, key: str, value: str) -> None:
         self.run("config", key, value)
 
@@ -143,7 +146,7 @@ class Git:
 
 
 def git_version() -> tuple[int, ...]:
-    """설치된 git 버전을 (major, minor, patch) 튜플로 돌려준다."""
+    """Return the installed git version as a ``(major, minor, patch)`` tuple."""
     out = subprocess.run(
         ["git", "--version"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
     ).stdout.decode("utf-8", "replace")
