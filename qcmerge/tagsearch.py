@@ -1,8 +1,9 @@
-"""CLO 태그들을 받아와 제조사 소스와 가장 가까운 태그를 찾는다.
+"""Fetch CLO tags and find the one closest to the OEM source.
 
-blob 은 받지 않는(``--filter=blob:none``) 부분 클론으로 태그의 트리 오브젝트만
-받아온다. 트리에 적힌 blob 해시만 있으면 파일 내용이 같은지 판별할 수 있으므로
-수 GB 짜리 blob 을 내려받지 않아도 유사도를 계산할 수 있다.
+Tags are fetched as a blobless partial clone (``--filter=blob:none``), so only
+their commits and trees arrive. The blob hashes recorded in those trees are
+enough to tell whether two files hold the same contents, so gigabytes of blobs
+never have to be downloaded to score a tag.
 """
 
 from __future__ import annotations
@@ -19,15 +20,16 @@ from .treemap import TagScore, iter_batch_objects, parse_ls_tree_z, parse_tree_o
 
 log = logging.getLogger(__name__)
 
-#: 한 번의 fetch 로 요청할 태그 수. 명령줄 길이와 서버 부담 사이의 절충값.
+#: Tags requested per fetch, balancing command line length against server load.
 DEFAULT_BATCH_SIZE = 200
 
-#: 1차 선별에서 남길 태그 수. 동점인 태그는 이 수를 넘겨도 모두 남긴다.
+#: Tags kept by the first pass. Tags tied at the cut-off are all kept, even
+#: when that leaves more than this many.
 DEFAULT_PREFILTER_KEEP = 150
 
 
 class TagSearcher:
-    """태그 캐시 저장소를 관리하며 유사도 계산을 수행한다."""
+    """Owns the tag cache repository and scores tags against the OEM tree."""
 
     def __init__(
         self,
@@ -44,16 +46,16 @@ class TagSearcher:
         self.fetch_retries = max(0, fetch_retries)
         self.git = Git(git_dir=self.cache_dir, cwd=self.cache_dir)
 
-    # ------------------------------------------------------------ 저장소 준비
+    # ----------------------------------------------------------- preparation
     def prepare(self) -> None:
-        """부분 클론 설정이 된 bare 캐시 저장소를 준비한다."""
+        """Set up a bare cache repository configured for partial clone."""
         if not os.path.exists(os.path.join(self.cache_dir, "HEAD")):
             os.makedirs(self.cache_dir, exist_ok=True)
-            log.info("태그 캐시 저장소 생성: %s", self.cache_dir)
+            log.info("creating the tag cache repository: %s", self.cache_dir)
             Git(cwd=self.cache_dir).run("init", "--bare", "--quiet", self.cache_dir)
 
         git = self.git
-        # extensions.* 를 쓰려면 저장소 포맷이 1 이어야 한다.
+        # extensions.* requires repository format version 1.
         git.config_set("core.repositoryformatversion", "1")
         git.config_set("extensions.partialClone", "origin")
         if git.config_get("remote.origin.url") is None:
@@ -62,34 +64,34 @@ class TagSearcher:
             git.run("remote", "set-url", "origin", self.url)
         git.config_set("remote.origin.promisor", "true")
         git.config_set("remote.origin.partialclonefilter", "blob:none")
-        # 태그 수천 개를 받는 동안 자동 gc 가 끼어들지 않게 한다.
+        # Keep automatic gc out of the way while thousands of tags come in.
         git.config_set("gc.auto", "0")
 
     def local_tags(self) -> set:
-        """캐시에 이미 받아둔 태그 이름."""
+        """Tag names already present in the cache."""
         return set(self.git.lines("for-each-ref", "--format=%(refname:short)", "refs/tags"))
 
-    # ------------------------------------------------------------------ 받기
+    # --------------------------------------------------------------- fetching
     def fetch_tags(
         self,
         tags: Sequence[str],
         progress: Optional[Callable] = None,
     ) -> list:
-        """아직 없는 태그의 커밋/트리 오브젝트를 받아온다.
+        """Fetch commits and trees for the tags that are not cached yet.
 
-        ``progress`` 는 ``(단계 이름, 진행 수, 전체 수)`` 로 호출된다.
+        ``progress`` is called as ``(stage name, done, total)``.
 
         Returns
         -------
-        받아오지 못한 태그 이름 목록.
+        The tag names that could not be fetched.
         """
         have = self.local_tags()
         missing = [tag for tag in tags if tag not in have]
         if not missing:
-            log.info("태그 %d 개 모두 캐시에 있음", len(tags))
+            log.info("all %d tags are already cached", len(tags))
             return []
 
-        log.info("태그 %d 개 중 %d 개를 새로 받아옵니다", len(tags), len(missing))
+        log.info("fetching %d of %d tags", len(missing), len(tags))
         failed: list = []
         done = 0
         for start in range(0, len(missing), self.batch_size):
@@ -98,9 +100,9 @@ class TagSearcher:
                 failed.extend(batch)
             done += len(batch)
             if progress:
-                progress("태그 받는 중", done, len(missing))
+                progress("fetching tags", done, len(missing))
         if failed:
-            log.warning("태그 %d 개는 받아오지 못했습니다", len(failed))
+            log.warning("%d tags could not be fetched", len(failed))
         return failed
 
     def _fetch_batch(self, batch: Sequence[str]) -> bool:
@@ -122,19 +124,19 @@ class TagSearcher:
                 return True
             stderr = proc.stderr.decode("utf-8", "replace").strip()
             log.warning(
-                "태그 fetch 실패(%d/%d): %s",
+                "tag fetch failed (%d/%d): %s",
                 attempt + 1,
                 self.fetch_retries + 1,
-                stderr.splitlines()[-1] if stderr else "(stderr 없음)",
+                stderr.splitlines()[-1] if stderr else "(no stderr)",
             )
             if attempt < self.fetch_retries:
                 time.sleep(delay)
                 delay *= 2
         return False
 
-    # --------------------------------------------------------------- 1차 선별
+    # ------------------------------------------------------------- first pass
     def top_level_maps(self, tags: Sequence[str]) -> dict:
-        """태그별 최상위 트리 항목을 한 번의 git 호출로 모아 온다."""
+        """Collect every tag's top-level tree entries in a single git call."""
         if not tags:
             return {}
         request = "".join("{0}^{{tree}}\n".format(tag) for tag in tags).encode(
@@ -153,11 +155,11 @@ class TagSearcher:
         vendor_top_level: dict,
         keep: int = DEFAULT_PREFILTER_KEEP,
     ) -> list:
-        """최상위 트리 항목만 비교해 후보를 빠르게 줄인다.
+        """Cut the candidate list down by comparing top-level tree entries only.
 
-        최상위 디렉터리의 트리 해시는 그 아래가 통째로 같을 때만 일치하므로,
-        제조사가 손대지 않은 디렉터리가 얼마나 남아 있는지를 싸게 잴 수 있다.
-        동점인 태그는 잘라내지 않는다.
+        A directory's tree hash matches only when everything below it is
+        identical, which makes this a very cheap measure of how much the OEM
+        left untouched. Tags tied at the cut-off are all kept.
         """
         if not tags or not vendor_top_level or keep <= 0 or len(tags) <= keep:
             return list(tags)
@@ -177,19 +179,19 @@ class TagSearcher:
         threshold = scored[min(keep, len(scored)) - 1][0]
         survivors = [tag for hits, tag in scored if hits >= threshold]
         log.info(
-            "1차 선별: 태그 %d -> %d 개 (최상위 항목 일치 %d 개 이상)",
+            "first pass: %d -> %d tags (at least %d matching top-level entries)",
             len(tags),
             len(survivors),
             threshold,
         )
         return survivors
 
-    # --------------------------------------------------------------- 정밀 비교
+    # ------------------------------------------------------------ second pass
     def _score_one(self, tag: str, vendor_files: dict) -> Optional[TagScore]:
         try:
             proc = self.git.run_bytes("ls-tree", "-r", "-z", tag)
         except GitError as exc:
-            log.warning("태그 %s 의 트리를 읽지 못했습니다: %s", tag, exc.stderr.splitlines()[-1:])
+            log.warning("could not read the tree of tag %s: %s", tag, exc.stderr.splitlines()[-1:])
             return None
         candidate = parse_ls_tree_z(proc.stdout)
         if not candidate:
@@ -202,11 +204,11 @@ class TagSearcher:
         vendor_files: dict,
         progress: Optional[Callable] = None,
     ) -> list:
-        """후보 태그들을 제조사 트리와 전부 비교해 점수를 매긴다."""
+        """Compare every candidate tag against the OEM tree and rank them."""
         if not tags:
-            raise QcMergeError("비교할 태그 후보가 없습니다.")
+            raise QcMergeError("no candidate tags left to compare.")
 
-        log.info("태그 %d 개를 정밀 비교합니다 (동시 실행 %d)", len(tags), self.jobs)
+        log.info("comparing %d tags in full (%d workers)", len(tags), self.jobs)
         scores: list = []
         done = 0
         with ThreadPoolExecutor(max_workers=self.jobs) as pool:
@@ -215,9 +217,9 @@ class TagSearcher:
                 if score is not None:
                     scores.append(score)
                 if progress:
-                    progress("태그 비교 중", done, len(tags))
+                    progress("comparing tags", done, len(tags))
         if not scores:
-            raise QcMergeError("태그를 하나도 비교하지 못했습니다. 캐시 저장소 상태를 확인하세요.")
+            raise QcMergeError("not a single tag could be compared; check the cache repository.")
         return rank(scores)
 
 
@@ -229,11 +231,11 @@ def find_closest(
     prefilter_keep: int = DEFAULT_PREFILTER_KEEP,
     progress: Optional[Callable] = None,
 ) -> list:
-    """태그를 받아오고 1차 선별과 정밀 비교를 거쳐 순위를 돌려준다."""
+    """Fetch the tags, run both passes and return the ranked scores."""
     searcher.prepare()
     searcher.fetch_tags(tags, progress=progress)
     available = sorted(set(tags) & searcher.local_tags())
     if not available:
-        raise QcMergeError("받아온 태그가 없습니다. 네트워크와 저장소 주소를 확인하세요.")
+        raise QcMergeError("no tags were fetched; check the network and the repository URL.")
     candidates = searcher.prefilter(available, vendor_top_level, keep=prefilter_keep)
     return searcher.score_tags(candidates, vendor_files, progress=progress)

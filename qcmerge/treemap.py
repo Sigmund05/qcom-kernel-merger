@@ -1,6 +1,6 @@
-"""git 트리를 "경로 -> blob 해시" 로 펼치고, 두 트리의 유사도를 계산한다.
+"""Flatten git trees into "path -> blob hash" maps and score their similarity.
 
-경로는 디코딩 비용과 비 UTF-8 경로 문제를 피하려고 bytes 그대로 다룬다.
+Paths are kept as bytes to avoid decoding costs and non-UTF-8 path trouble.
 """
 
 from __future__ import annotations
@@ -8,14 +8,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterator, Mapping, Sequence
 
-#: 경로 -> 오브젝트 해시(hex, bytes) 매핑.
+#: A mapping of path to object hash (hex, as bytes).
 TreeMap = "dict[bytes, bytes]"
 
 
 def parse_ls_tree_z(data: bytes) -> dict:
-    """``git ls-tree -r -z`` 출력을 파싱한다.
+    """Parse ``git ls-tree -r -z`` output.
 
-    레코드 형식은 ``<mode> SP <type> SP <sha> TAB <path> NUL`` 이다.
+    Each record is ``<mode> SP <type> SP <sha> TAB <path> NUL``.
     """
     result: dict = {}
     for record in data.split(b"\x00"):
@@ -29,9 +29,9 @@ def parse_ls_tree_z(data: bytes) -> dict:
 
 
 def parse_tree_object(raw: bytes) -> dict:
-    """git 트리 오브젝트 원본을 ``이름 -> hex 해시`` 로 파싱한다.
+    """Parse a raw git tree object into ``name -> hex hash``.
 
-    항목 형식은 ``<mode> SP <name> NUL <20 byte sha>`` 이다.
+    Each entry is ``<mode> SP <name> NUL <20 byte sha>``.
     """
     result: dict = {}
     pos = 0
@@ -53,12 +53,12 @@ def parse_tree_object(raw: bytes) -> dict:
 
 
 def iter_batch_objects(data: bytes) -> Iterator:
-    """``git cat-file --batch`` 출력 스트림을 순서대로 훑는다.
+    """Walk a ``git cat-file --batch`` output stream in order.
 
-    각 응답은 ``<oid> SP <type> SP <size> LF <내용> LF`` 이거나,
-    없는 오브젝트면 ``<입력> SP missing LF`` 이다.
-    입력 순서와 출력 순서가 같으므로 ``(type, payload)`` 를 순서대로 내보낸다.
-    ``missing`` 인 경우 ``(None, b"")`` 를 내보낸다.
+    Each response is either ``<oid> SP <type> SP <size> LF <contents> LF`` or,
+    for an object that is not there, ``<input> SP missing LF``. Responses come
+    back in input order, so ``(type, payload)`` is yielded in that same order,
+    with ``(None, b"")`` standing in for a missing object.
     """
     pos = 0
     size = len(data)
@@ -79,19 +79,19 @@ def iter_batch_objects(data: bytes) -> Iterator:
             yield (None, b"")
             continue
         payload = data[pos : pos + length]
-        pos += length + 1  # 내용 뒤의 개행 한 칸
+        pos += length + 1  # skip the newline after the contents
         yield (obj_type, payload)
 
 
 @dataclass(frozen=True)
 class TagScore:
-    """제조사 트리와 CLO 태그 하나를 비교한 결과."""
+    """The result of comparing the OEM tree against one CLO tag."""
 
     tag: str
-    matched: int      # 경로와 내용이 모두 같은 파일 수
-    modified: int     # 경로는 같지만 내용이 다른 파일 수
-    only_vendor: int  # 제조사 소스에만 있는 파일 수
-    only_tag: int     # 태그에만 있는 파일 수
+    matched: int      # same path, same contents
+    modified: int     # same path, different contents
+    only_vendor: int  # present only in the OEM source
+    only_tag: int     # present only in the tag
 
     @property
     def vendor_total(self) -> int:
@@ -103,23 +103,23 @@ class TagScore:
 
     @property
     def union(self) -> int:
-        """두 트리에 등장하는 서로 다른 경로의 총 개수."""
+        """Number of distinct paths appearing in either tree."""
         return self.vendor_total + self.only_tag
 
     @property
     def score(self) -> float:
-        """자카드 유사도: 같은 파일 수 / 전체 경로 수 (0.0 ~ 1.0)."""
+        """Jaccard index: identical files over total paths, 0.0 to 1.0."""
         return (self.matched / self.union) if self.union else 0.0
 
     @property
     def changed(self) -> int:
-        """제조사 변경점으로 볼 수 있는 파일 수(추가+수정+삭제)."""
+        """Files that make up the OEM's changes: modified, added and removed."""
         return self.modified + self.only_vendor + self.only_tag
 
     def summary(self) -> str:
         return (
-            "{tag}  유사도 {score:.4f}  일치 {matched}  수정 {modified}  "
-            "제조사만 {ov}  태그만 {ot}".format(
+            "{tag}  score {score:.4f}  same {matched}  modified {modified}  "
+            "oem only {ov}  tag only {ot}".format(
                 tag=self.tag,
                 score=self.score,
                 matched=self.matched,
@@ -131,7 +131,7 @@ class TagScore:
 
 
 def score_maps(tag: str, vendor: Mapping, candidate: Mapping) -> TagScore:
-    """제조사 트리와 후보 트리를 비교해 :class:`TagScore` 를 만든다."""
+    """Compare the OEM tree against a candidate tree into a :class:`TagScore`."""
     matched = 0
     modified = 0
     only_vendor = 0
@@ -155,5 +155,5 @@ def score_maps(tag: str, vendor: Mapping, candidate: Mapping) -> TagScore:
 
 
 def rank(scores: Sequence[TagScore]) -> list:
-    """유사도가 높은 순으로 정렬한다. 동점이면 일치 파일 수, 태그 이름 순."""
+    """Sort by descending score, then identical files, then tag name."""
     return sorted(scores, key=lambda s: (-s.score, -s.matched, s.tag))
