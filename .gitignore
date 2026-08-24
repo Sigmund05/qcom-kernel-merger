@@ -7,6 +7,6 @@ dist/
 .venv/
 venv/
 
-# 도구가 만들어내는 작업물
+# Produced by the tool
 /qcmerge-out/
 /.qcmerge-cache/

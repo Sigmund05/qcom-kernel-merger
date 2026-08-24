@@ -1,4 +1,4 @@
-"""CLO 저장소 주소/태그 목록 처리 테스트."""
+"""Tests for CLO repository addressing and tag listing."""
 
 import unittest
 

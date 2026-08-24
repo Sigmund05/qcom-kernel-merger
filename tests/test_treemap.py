@@ -1,4 +1,4 @@
-"""트리 파싱과 유사도 계산 테스트."""
+"""Tests for tree parsing and similarity scoring."""
 
 import os
 import subprocess
@@ -28,7 +28,7 @@ class ParseLsTreeTest(unittest.TestCase):
 
 
 class RealGitTreeTest(unittest.TestCase):
-    """git 이 실제로 만든 트리를 대상으로 파싱을 검증한다."""
+    """Check the parsers against trees git actually wrote."""
 
     def test_tree_object_matches_ls_tree(self):
         with tempfile.TemporaryDirectory() as tmp:

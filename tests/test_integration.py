@@ -1,6 +1,7 @@
-"""로컬에 만든 가짜 CLO 저장소로 전체 흐름을 검증한다.
+"""Exercise the whole flow against a fake CLO repository built locally.
 
-실제 CodeLinaro 로 나가지 않으므로 네트워크 없이 돌아간다.
+Nothing reaches the real CodeLinaro, so these tests run without network
+access.
 """
 
 from __future__ import annotations
@@ -42,7 +43,7 @@ SNAPSHOTS = [
 
 
 def vendor_source(root: str) -> None:
-    """TAG_C 를 바탕으로 제조사가 손댄 소스를 만든다."""
+    """Derive an OEM source from TAG_C with a few vendor changes."""
     files = dict(SNAPSHOTS[2][1])
     files["drivers/soc/qcom/smem.c"] = "smem v2\n/* oem tweak */\n"
     files["drivers/oem/oem_driver.c"] = "int oem_probe(void) { return 0; }\n"
@@ -78,18 +79,18 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(code, 0, buffer.getvalue())
         return buffer.getvalue()
 
-    # ------------------------------------------------------------------ 검증
+    # ----------------------------------------------------------------- checks
     def test_picks_closest_tag_and_builds_repo(self):
         output = self.run_cli()
         self.assertIn(TAG_C, output)
 
-        # 기준 태그가 결과 저장소에 들어와 있다.
+        # The base tag made it into the result repository.
         self.assertEqual(
             git("rev-parse", TAG_C + "^{commit}", cwd=self.out),
             git("rev-parse", "vendor^", cwd=self.out),
         )
 
-        # 제조사 변경점이 커밋 하나로 표현된다.
+        # The OEM changes come out as a single commit.
         diff = git("diff", "--name-status", TAG_C + "..vendor", cwd=self.out).splitlines()
         self.assertEqual(
             sorted(diff),
@@ -102,7 +103,7 @@ class PipelineTest(unittest.TestCase):
             ),
         )
 
-        # 작업 트리에 소스가 펼쳐져 있다.
+        # The source is checked out into the work tree.
         self.assertTrue(os.path.isfile(os.path.join(self.out, "drivers/oem/oem_driver.c")))
         self.assertFalse(os.path.exists(os.path.join(self.out, "Documentation/qcom.txt")))
 
@@ -141,7 +142,7 @@ class PipelineTest(unittest.TestCase):
 
 
 class PrefilterTest(unittest.TestCase):
-    """최상위 트리 비교로 후보를 줄이는 1차 선별 동작."""
+    """The first pass that narrows candidates by top-level tree entries."""
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()

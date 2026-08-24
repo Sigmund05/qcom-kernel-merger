@@ -1,116 +1,123 @@
 # qcom-kernel-merger
 
-제조사(OEM)가 공개한 퀄컴 기기용 커널 소스를, [CodeLinaro(CLO)](https://git.codelinaro.org/clo/la/kernel)
-에 올라와 있는 퀄컴 원본 커널 중 **가장 가까운 태그** 위에 올려 주는 도구입니다.
+Takes an OEM kernel source for a Qualcomm device and puts it on top of the
+**closest tag** in Qualcomm's own kernel sources on
+[CodeLinaro (CLO)](https://git.codelinaro.org/clo/la/kernel).
 
-제조사 커널 소스는 보통 git 이력 없이 통짜 압축 파일로 배포됩니다. 이 도구는
-어느 CLO 태그에서 갈라져 나온 소스인지 찾아내고, 그 태그를 첫 커밋으로 둔
-저장소를 만들어 제조사 변경점을 커밋 하나로 정리해 줍니다.
+OEM kernel sources usually ship as a plain archive with no git history. This
+tool works out which CLO tag the source branched from, builds a repository with
+that tag as the first commit, and records the OEM's changes as a single commit
+on top of it.
 
 ```
 $ qcmerge ~/src/oem-kernel -o ~/work/merged
 
-가장 가까운 태그 후보:
-   1. LA.UM.9.14.r1-19700-LAHAINA.0  유사도 0.9312  일치 68142  수정 3120  제조사만 1804  태그만 212
-   2. LA.UM.9.14.r1-19600-LAHAINA.0  유사도 0.9188  일치 67235  수정 4011  제조사만 1804  태그만 240
+Closest tag candidates:
+   1. LA.UM.9.14.r1-19700-LAHAINA.0  score 0.9312  same 68142  modified 3120  oem only 1804  tag only 212
+   2. LA.UM.9.14.r1-19600-LAHAINA.0  score 0.9188  same 67235  modified 4011  oem only 1804  tag only 240
    ...
 
-완료했습니다.
-  결과 저장소 : /home/me/work/merged
-  기준 태그   : LA.UM.9.14.r1-19700-LAHAINA.0 (eba5b98c68f5)
-  브랜치      : vendor (bf402985995e)
-  제조사 변경 : 수정 3120, 추가 1804, 삭제 212
+Done.
+  result repository : /home/me/work/merged
+  base tag          : LA.UM.9.14.r1-19700-LAHAINA.0 (eba5b98c68f5)
+  branch            : vendor (bf402985995e)
+  OEM changes       : 3120 modified, 1804 added, 212 removed
 ```
 
-결과 저장소에서 `git diff <기준 태그>..vendor` 가 곧 제조사 변경점입니다.
+In the result repository, `git diff <base tag>..vendor` is exactly the OEM's
+changes.
 
-## 동작 방식
+## How it works
 
-1. **커널 버전 판별** — 제조사 소스 최상위 `Makefile` 의 `VERSION`/`PATCHLEVEL`/
-   `SUBLEVEL` 을 읽습니다.
-2. **CLO 저장소 결정** — 6.1 미만은 계열별 저장소(`msm-3.18`, `msm-4.9`,
-   `msm-5.4` …), 6.1 이상은 통합 저장소(`qcom`) 를 씁니다.
-3. **가장 가까운 태그 찾기**
-   - `git ls-remote --tags` 로 태그 목록을 받습니다.
-   - `--filter=blob:none --depth=1` 부분 클론으로 태그의 **커밋과 트리만**
-     받습니다. 트리에 적힌 blob 해시만 있으면 파일 내용이 같은지 판별할 수
-     있어서, 수 GB 짜리 blob 을 내려받지 않아도 됩니다.
-   - **1차 선별**: 최상위 트리 항목만 비교합니다. 디렉터리의 트리 해시는 그
-     아래가 통째로 같을 때만 일치하므로, 제조사가 손대지 않은 디렉터리가 얼마나
-     남아 있는지를 아주 싸게 잴 수 있습니다. 동점인 태그는 잘라내지 않습니다.
-   - **정밀 비교**: 남은 후보마다 `git ls-tree -r` 로 전체 파일 목록을 펼쳐
-     제조사 트리와 대조하고, 자카드 유사도(`같은 파일 수 / 전체 경로 수`) 로
-     점수를 매깁니다.
-4. **병합** — 1등 태그를 blob 까지 받아 첫 커밋으로 두고, 그 위에 제조사 소스
-   트리를 통째로 얹은 커밋을 만듭니다.
+1. **Detect the kernel version** — read `VERSION`, `PATCHLEVEL` and `SUBLEVEL`
+   from the OEM source's top-level `Makefile`.
+2. **Pick the CLO repository** — below 6.1, the per-series repositories
+   (`msm-3.18`, `msm-4.9`, `msm-5.4` and so on); from 6.1 up, the merged
+   `qcom` repository.
+3. **Find the closest tag**
+   - List the tags with `git ls-remote --tags`.
+   - Fetch **commits and trees only** with a
+     `--filter=blob:none --depth=1` partial clone. The blob hashes recorded in
+     those trees are enough to tell whether two files hold the same contents,
+     so gigabytes of blobs never have to be downloaded.
+   - **First pass**: compare top-level tree entries only. A directory's tree
+     hash matches only when everything below it is identical, which makes this
+     a very cheap measure of how much the OEM left untouched. Tags tied at the
+     cut-off are all kept.
+   - **Second pass**: for each surviving candidate, expand the full file list
+     with `git ls-tree -r`, compare it against the OEM tree and score it with
+     the Jaccard index (`identical files / total distinct paths`).
+4. **Merge** — fetch the winning tag with its blobs, put it in as the first
+   commit and lay the whole OEM source tree on top of it as a single commit.
 
 ```
-결과 저장소
-  * bf40298 (vendor)  vendor: import oem-kernel kernel source   <- 제조사 변경점
-  * eba5b98 (tag: LA.UM.9.14.r1-19700-LAHAINA.0)                <- CLO 원본
+result repository
+  * bf40298 (vendor)  vendor: import oem-kernel kernel source   <- OEM changes
+  * eba5b98 (tag: LA.UM.9.14.r1-19700-LAHAINA.0)                <- CLO original
 ```
 
-## 설치
+## Installing
 
-파이썬 3.9 이상과 git 만 있으면 됩니다. 외부 의존성은 없습니다.
+Python 3.9 or newer and git. No third-party dependencies.
 
 ```sh
 pip install -e .
-# 또는 설치 없이
+# or, without installing
 python3 -m qcmerge --help
 ```
 
-## 사용법
+## Usage
 
 ```sh
-qcmerge [옵션] <제조사 커널 소스 경로>
+qcmerge [options] <oem kernel source path>
 ```
 
-| 옵션 | 설명 |
+| Option | Description |
 | --- | --- |
-| `-o, --output DIR` | 결과 저장소 경로 (기본: `qcmerge-out`). 비어 있어야 합니다 |
-| `-b, --branch NAME` | 제조사 소스를 올릴 브랜치 이름 (기본: `vendor`) |
-| `--cache-dir DIR` | 태그 캐시 저장소 (기본: `~/.cache/qcom-kernel-merger/<저장소>`) |
-| `--clo-base URL` | CLO 커널 그룹 주소 |
-| `--repo NAME` | 자동 판별 대신 쓸 저장소 이름 (`msm-5.4`, `qcom` …) |
-| `--tag-pattern GLOB` | 후보 태그를 좁히는 glob 패턴. 여러 번 지정 가능 |
-| `-j, --jobs N` | 비교 동시 실행 수 (기본: CPU 개수) |
-| `--prefilter-keep N` | 1차 선별에서 남길 태그 수. `0` 이면 선별 없이 전부 비교 |
-| `--batch-size N` | 한 번의 fetch 로 요청할 태그 수 |
-| `--top N` | 상위 몇 개 태그를 표시할지 |
-| `--depth N` | 기준 태그를 받아올 깊이. `0` 이면 전체 이력 |
-| `-m, --message TEXT` | 제조사 소스 커밋 메시지 직접 지정 |
-| `--no-checkout` | 결과 저장소 작업 트리를 펼치지 않음 |
+| `-o, --output DIR` | Result repository path (default: `qcmerge-out`). Must be empty |
+| `-b, --branch NAME` | Branch to put the OEM source on (default: `vendor`) |
+| `--cache-dir DIR` | Tag cache repository (default: `~/.cache/qcom-kernel-merger/<repo>`) |
+| `--clo-base URL` | CLO kernel group URL |
+| `--repo NAME` | Repository name to use instead of the detected one (`msm-5.4`, `qcom` …) |
+| `--tag-pattern GLOB` | Glob pattern narrowing the candidate tags; may be given more than once |
+| `-j, --jobs N` | Comparisons to run at once (default: CPU count) |
+| `--prefilter-keep N` | Tags kept by the first pass; `0` compares everything |
+| `--batch-size N` | Tags requested per fetch |
+| `--top N` | How many tag candidates to print |
+| `--depth N` | Depth to fetch the base tag at; `0` for full history |
+| `-m, --message TEXT` | Message for the OEM source commit |
+| `--no-checkout` | Do not check the source out into the result work tree |
 
-칩셋이나 릴리스 계열을 이미 알고 있다면 `--tag-pattern` 으로 후보를 줄이는 쪽이
-훨씬 빠릅니다.
+When the chipset or release line is already known, narrowing the candidates
+with `--tag-pattern` is much faster.
 
 ```sh
 qcmerge ~/src/oem-kernel --tag-pattern 'LA.UM.9.14*LAHAINA*'
 ```
 
-## 알아둘 점
+## Things worth knowing
 
-- **디스크**: 태그 캐시는 blob 을 받지 않지만 트리 오브젝트는 받습니다. 태그가
-  수천 개인 저장소는 수백 MB 를 쓸 수 있습니다. 캐시는 재실행 때 그대로
-  재사용됩니다.
-- **`.gitignore`**: 제조사 소스 안의 `.gitignore` 가 그대로 적용됩니다. 커널
-  트리의 `.gitignore` 는 빌드 산출물만 제외하므로 CLO 태그와 같은 기준으로
-  비교됩니다.
-- **소스 디렉터리**: 제조사 소스는 읽기만 합니다(`--work-tree` 로만 참조).
-  다만 소스 안에 `.git` 이 있으면 git 이 서브모듈로 취급하므로, 그런 경우엔
-  오류를 내고 멈춥니다.
-- **비교 기준**: 파일 내용의 동일 여부(blob 해시)만 봅니다. 파일 모드 변경이나
-  줄 단위 유사도는 점수에 반영하지 않습니다.
+- **Disk**: the tag cache holds no blobs, but it does hold tree objects. A
+  repository with thousands of tags can take hundreds of megabytes. The cache
+  is reused as-is on the next run.
+- **`.gitignore`**: the OEM source's own `.gitignore` files apply. A kernel
+  tree's `.gitignore` only excludes build output, so the comparison against
+  CLO tags stays on the same footing.
+- **The source directory**: the OEM source is only ever read, through
+  `--work-tree`. A `.git` inside it would be recorded as a submodule, so that
+  case stops with an error.
+- **What is compared**: only whether file contents are identical (the blob
+  hash). File mode changes and line-level similarity do not affect the score.
 
-## 테스트
+## Tests
 
-네트워크 없이 로컬에 가짜 CLO 저장소를 만들어 전체 흐름을 검증합니다.
+A fake CLO repository is built locally, so the whole flow is covered without
+network access.
 
 ```sh
 python3 -m unittest discover -s tests -t .
 ```
 
-## 라이선스
+## License
 
-아직 정하지 않았습니다.
+Not chosen yet.

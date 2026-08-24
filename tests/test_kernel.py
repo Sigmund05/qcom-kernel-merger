@@ -1,4 +1,4 @@
-"""커널 버전 판별 테스트."""
+"""Tests for kernel version detection."""
 
 import os
 import tempfile

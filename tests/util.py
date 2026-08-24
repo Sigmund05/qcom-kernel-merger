@@ -1,4 +1,4 @@
-"""테스트에서 쓰는 가짜 CLO 저장소/제조사 소스 생성 도구."""
+"""Helpers that build a fake CLO repository and an OEM source for tests."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def git(*args: str, cwd: str) -> str:
     )
     if proc.returncode != 0:
         raise AssertionError(
-            "git {0} 실패: {1}".format(" ".join(args), proc.stderr.decode("utf-8", "replace"))
+            "git {0} failed: {1}".format(" ".join(args), proc.stderr.decode("utf-8", "replace"))
         )
     return proc.stdout.decode("utf-8", "replace").rstrip("\n")
 
@@ -49,7 +49,7 @@ def kernel_makefile(version: int, patchlevel: int, sublevel: int) -> str:
 
 
 def write_tree(root: str, files: Mapping[str, str]) -> None:
-    """디렉터리를 지우고 주어진 파일들만 남긴다."""
+    """Empty the directory and leave exactly the given files behind."""
     if os.path.isdir(root):
         for entry in os.listdir(root):
             if entry == ".git":
@@ -64,10 +64,10 @@ def write_tree(root: str, files: Mapping[str, str]) -> None:
 
 
 def build_clo_fixture(base_dir: str, repo_name: str, snapshots: Sequence) -> str:
-    """태그가 여러 개 달린 가짜 CLO 저장소(bare)를 만든다.
+    """Build a bare fake CLO repository carrying several tags.
 
-    ``snapshots`` 는 ``(태그 이름, {경로: 내용})`` 의 순서 있는 목록이다.
-    반환값은 ``--clo-base`` 로 넘길 수 있는 그룹 디렉터리 경로.
+    ``snapshots`` is an ordered sequence of ``(tag name, {path: contents})``.
+    Returns the group directory, ready to be passed as ``--clo-base``.
     """
     group_dir = os.path.join(base_dir, "clo")
     work_dir = os.path.join(base_dir, "clo-work", repo_name)

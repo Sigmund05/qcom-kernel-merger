@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "qcom-kernel-merger"
 version = "0.1.0"
-description = "제조사 커널 소스를 가장 가까운 CodeLinaro(CLO) 태그 위에 올려주는 도구"
+description = "Put an OEM kernel source on top of the closest CodeLinaro (CLO) tag"
 requires-python = ">=3.9"
 dependencies = []
 
