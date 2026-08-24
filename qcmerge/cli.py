@@ -1,4 +1,4 @@
-"""명령줄 진입점."""
+"""Command line entry point."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ DEFAULT_BRANCH = "vendor"
 
 
 def default_cache_root() -> str:
-    """태그 캐시를 둘 기본 위치."""
+    """Where the tag cache lives by default."""
     base = os.environ.get("XDG_CACHE_HOME") or os.path.join(
         os.path.expanduser("~"), ".cache"
     )
@@ -27,7 +27,7 @@ def default_cache_root() -> str:
 
 
 class Progress:
-    """단계별 진행 상황을 stderr 에 표시한다."""
+    """Reports per-stage progress on stderr."""
 
     def __init__(self, enabled: bool = True) -> None:
         self.enabled = enabled and sys.stderr.isatty()
@@ -56,67 +56,77 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="qcmerge",
         description=(
-            "제조사 커널 소스를 CodeLinaro(CLO) 의 가장 가까운 태그 위에 올려 "
-            "결과 저장소를 만듭니다."
+            "Build a repository that holds an OEM kernel source on top of the "
+            "closest CodeLinaro (CLO) tag."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "예시:\n"
+            "examples:\n"
             "  qcmerge ~/src/oem-kernel -o ~/work/merged\n"
             "  qcmerge ~/src/oem-kernel --tag-pattern 'LA.UM.9.14*LAHAINA*'\n"
         ),
     )
-    parser.add_argument("source", help="제조사 커널 소스 최상위 디렉터리")
+    parser.add_argument("source", help="top-level directory of the OEM kernel source")
     parser.add_argument(
-        "-o", "--output", default=DEFAULT_OUTPUT, help="결과 저장소 경로 (기본: %(default)s)"
+        "-o", "--output", default=DEFAULT_OUTPUT, help="result repository path (default: %(default)s)"
     )
     parser.add_argument(
-        "-b", "--branch", default=DEFAULT_BRANCH, help="제조사 소스를 올릴 브랜치 이름 (기본: %(default)s)"
+        "-b", "--branch", default=DEFAULT_BRANCH,
+        help="branch to put the OEM source on (default: %(default)s)",
     )
-    parser.add_argument("--cache-dir", help="태그 캐시 저장소 경로 (기본: ~/.cache/qcom-kernel-merger/<저장소>)")
+    parser.add_argument(
+        "--cache-dir",
+        help="tag cache repository (default: ~/.cache/qcom-kernel-merger/<repo>)",
+    )
 
-    group = parser.add_argument_group("CLO 저장소")
+    group = parser.add_argument_group("CLO repository")
     group.add_argument(
-        "--clo-base", default=clo.DEFAULT_CLO_BASE, help="CLO 커널 그룹 주소 (기본: %(default)s)"
+        "--clo-base", default=clo.DEFAULT_CLO_BASE,
+        help="CLO kernel group URL (default: %(default)s)",
     )
-    group.add_argument("--repo", help="자동 판별 대신 사용할 저장소 이름 (예: msm-5.4, qcom)")
+    group.add_argument("--repo", help="repository name to use instead of the detected one")
     group.add_argument(
         "--tag-pattern",
         action="append",
         default=[],
         metavar="GLOB",
-        help="후보 태그를 좁히는 glob 패턴. 여러 번 지정 가능",
+        help="glob pattern narrowing the candidate tags; may be given more than once",
     )
 
-    group = parser.add_argument_group("탐색")
+    group = parser.add_argument_group("search")
     group.add_argument(
-        "-j", "--jobs", type=int, default=os.cpu_count() or 4, help="비교에 쓸 동시 실행 수 (기본: %(default)s)"
+        "-j", "--jobs", type=int, default=os.cpu_count() or 4,
+        help="number of comparisons to run at once (default: %(default)s)",
     )
     group.add_argument(
         "--prefilter-keep",
         type=int,
         default=tagsearch.DEFAULT_PREFILTER_KEEP,
-        help="1차 선별에서 남길 태그 수 (0 이면 선별하지 않음, 기본: %(default)s)",
+        help="tags kept by the first pass, 0 to skip it (default: %(default)s)",
     )
     group.add_argument(
         "--batch-size",
         type=int,
         default=tagsearch.DEFAULT_BATCH_SIZE,
-        help="한 번에 받아올 태그 수 (기본: %(default)s)",
+        help="tags requested per fetch (default: %(default)s)",
     )
-    group.add_argument("--top", type=int, default=10, help="상위 몇 개 태그를 표시할지 (기본: %(default)s)")
-
-    group = parser.add_argument_group("결과")
     group.add_argument(
-        "--depth", type=int, default=1, help="기준 태그를 받아올 깊이. 0 이면 전체 이력 (기본: %(default)s)"
-    )
-    group.add_argument("-m", "--message", help="제조사 소스 커밋에 쓸 메시지")
-    group.add_argument(
-        "--no-checkout", action="store_true", help="결과 저장소의 작업 트리를 펼치지 않음"
+        "--top", type=int, default=10, help="how many tag candidates to print (default: %(default)s)"
     )
 
-    parser.add_argument("-v", "--verbose", action="store_true", help="자세한 로그 출력")
-    parser.add_argument("-q", "--quiet", action="store_true", help="경고 이상만 출력")
+    group = parser.add_argument_group("result")
+    group.add_argument(
+        "--depth", type=int, default=1,
+        help="depth to fetch the base tag at, 0 for full history (default: %(default)s)",
+    )
+    group.add_argument("-m", "--message", help="message for the OEM source commit")
+    group.add_argument(
+        "--no-checkout", action="store_true",
+        help="do not check the source out into the result work tree",
+    )
+
+    parser.add_argument("-v", "--verbose", action="store_true", help="verbose logging")
+    parser.add_argument("-q", "--quiet", action="store_true", help="warnings and errors only")
     parser.add_argument("--version", action="version", version="qcom-kernel-merger " + __version__)
     return parser
 
@@ -132,7 +142,7 @@ def setup_logging(verbose: bool, quiet: bool) -> None:
 
 def print_ranking(scores: Sequence[TagScore], top: int) -> None:
     print("")
-    print("가장 가까운 태그 후보:")
+    print("Closest tag candidates:")
     for index, score in enumerate(scores[:top], start=1):
         print("  {rank:2d}. {summary}".format(rank=index, summary=score.summary()))
     print("")
@@ -142,11 +152,11 @@ def run(args: argparse.Namespace) -> int:
     source = os.path.abspath(args.source)
 
     kernel_version = kernel.detect(source)
-    log.info("커널 버전: %s", kernel_version.full)
+    log.info("kernel version: %s", kernel_version.full)
 
     repo_name = args.repo or clo.repo_name(kernel_version)
     url = "{base}/{name}.git".format(base=args.clo_base.rstrip("/"), name=repo_name)
-    log.info("CLO 저장소: %s", url)
+    log.info("CLO repository: %s", url)
 
     out_git = merger.prepare_output_repo(args.output, url, args.branch)
     vendor_tree = vendor.index_source(
@@ -155,7 +165,7 @@ def run(args: argparse.Namespace) -> int:
 
     tags = clo.filter_tags(clo.list_remote_tags(url), args.tag_pattern)
     if not tags:
-        raise QcMergeError("조건에 맞는 태그가 없습니다. --tag-pattern 을 확인하세요.")
+        raise QcMergeError("no tags matched; check --tag-pattern.")
 
     cache_dir = args.cache_dir or os.path.join(default_cache_root(), repo_name)
     searcher = tagsearch.TagSearcher(
@@ -191,13 +201,16 @@ def run(args: argparse.Namespace) -> int:
         checkout=not args.no_checkout,
     )
 
-    print("완료했습니다.")
-    print("  결과 저장소 : %s" % result.out_dir)
-    print("  기준 태그   : %s (%s)" % (result.base_tag, result.base_commit[:12]))
-    print("  브랜치      : %s (%s)" % (result.branch, result.commit[:12]))
-    print("  제조사 변경 : 수정 %d, 추가 %d, 삭제 %d" % (best.modified, best.only_vendor, best.only_tag))
+    print("Done.")
+    print("  result repository : %s" % result.out_dir)
+    print("  base tag          : %s (%s)" % (result.base_tag, result.base_commit[:12]))
+    print("  branch            : %s (%s)" % (result.branch, result.commit[:12]))
+    print(
+        "  OEM changes       : %d modified, %d added, %d removed"
+        % (best.modified, best.only_vendor, best.only_tag)
+    )
     print("")
-    print("변경점 확인:")
+    print("Review the changes with:")
     print("  git -C %s diff --stat %s..%s" % (result.out_dir, result.base_tag, result.branch))
     return 0
 
@@ -209,10 +222,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         return run(args)
     except QcMergeError as exc:
-        print("오류: %s" % exc, file=sys.stderr)
+        print("error: %s" % exc, file=sys.stderr)
         return 2
-    except KeyboardInterrupt:  # pragma: no cover - 사용자 중단
-        print("\n중단했습니다.", file=sys.stderr)
+    except KeyboardInterrupt:  # pragma: no cover - user interrupt
+        print("\nInterrupted.", file=sys.stderr)
         return 130
 
 
