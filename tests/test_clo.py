@@ -7,15 +7,17 @@ from qcmerge.kernel import KernelVersion
 
 
 class RepoNameTest(unittest.TestCase):
-    def test_msm_repo_below_6_1(self):
+    def test_msm_repo_up_to_5_15(self):
         self.assertEqual(clo.repo_name(KernelVersion(3, 18, 140)), "msm-3.18")
         self.assertEqual(clo.repo_name(KernelVersion(4, 4, 302)), "msm-4.4")
+        self.assertEqual(clo.repo_name(KernelVersion(4, 19, 157)), "msm-4.19")
         self.assertEqual(clo.repo_name(KernelVersion(5, 10, 200)), "msm-5.10")
-        self.assertEqual(clo.repo_name(KernelVersion(6, 0, 5)), "msm-6.0")
+        self.assertEqual(clo.repo_name(KernelVersion(5, 15, 78)), "msm-5.15")
 
     def test_qcom_repo_from_6_1(self):
         self.assertEqual(clo.repo_name(KernelVersion(6, 1, 57)), "qcom")
         self.assertEqual(clo.repo_name(KernelVersion(6, 12, 3)), "qcom")
+        self.assertEqual(clo.repo_name(KernelVersion(6, 18, 1)), "qcom")
 
     def test_url(self):
         self.assertEqual(

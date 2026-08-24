@@ -26,11 +26,13 @@ class ParseMakefileTest(unittest.TestCase):
     def test_returns_none_for_non_kernel_makefile(self):
         self.assertIsNone(kernel.parse_makefile("all:\n\techo hi\n"))
 
-    def test_qcom_repo_boundary(self):
-        self.assertFalse(kernel.KernelVersion(5, 15, 78).uses_qcom_repo())
-        self.assertFalse(kernel.KernelVersion(6, 0, 12).uses_qcom_repo())
-        self.assertTrue(kernel.KernelVersion(6, 1, 0).uses_qcom_repo())
-        self.assertTrue(kernel.KernelVersion(6, 6, 30).uses_qcom_repo())
+    def test_msm_repo_up_to_the_last_msm_series(self):
+        for series in ((3, 18), (4, 4), (4, 9), (4, 14), (4, 19), (5, 4), (5, 10), (5, 15)):
+            self.assertFalse(kernel.KernelVersion(*series, 0).uses_qcom_repo(), series)
+
+    def test_qcom_repo_past_the_last_msm_series(self):
+        for series in ((6, 1), (6, 6), (6, 12), (6, 18)):
+            self.assertTrue(kernel.KernelVersion(*series, 0).uses_qcom_repo(), series)
 
 
 class DetectTest(unittest.TestCase):

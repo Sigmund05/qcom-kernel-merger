@@ -17,9 +17,11 @@ _ASSIGN_RE = re.compile(
 #: Fields that must be present for the file to count as a kernel Makefile.
 _REQUIRED = ("VERSION", "PATCHLEVEL")
 
-#: At or above this version CLO keeps everything in the merged qcom repository;
-#: below it, each series has its own msm-<series> repository.
-QCOM_REPO_MIN = (6, 1)
+#: Last kernel series CLO keeps in its own msm-<series> repository. Everything
+#: past it lives in the merged qcom repository. The boundary is written as the
+#: last msm series rather than the first qcom one because no long-term support
+#: release sits between 5.15 and 6.1.
+LAST_MSM_SERIES = (5, 15)
 
 
 @dataclass(frozen=True)
@@ -46,7 +48,7 @@ class KernelVersion:
 
     def uses_qcom_repo(self) -> bool:
         """Whether this version lives in CLO's merged ``qcom`` repository."""
-        return (self.version, self.patchlevel) >= QCOM_REPO_MIN
+        return (self.version, self.patchlevel) > LAST_MSM_SERIES
 
     def __str__(self) -> str:  # pragma: no cover - display only
         return self.release
